@@ -64,37 +64,28 @@ var createCommand = cli.Command{
 	},
 }
 
-var defaultHypervisorType = vc.QemuHypervisor
-var defaultAgentType = vc.HyperstartAgent
-var defaultProxyType = vc.CCProxyType
-var defaultHypervisorConfig = vc.HypervisorConfig{
-	KernelPath:     "/usr/share/clear-containers/vmlinux.container",
-	ImagePath:      "/usr/share/clear-containers/clear-containers.img",
-	HypervisorPath: "/usr/bin/qemu-lite-system-x86_64",
-}
-var defaultAgentConfig = vc.HyperConfig{
-	PauseBinPath: "/tmp/bundles/pause_bundle/rootfs/bin/pause",
-}
-
-var defaultShimPath = "/usr/bin/shim"
+// Specific values related to OCI runtime spec for create.
+const (
+	defaultShimPath = "/usr/bin/shim"
+)
 
 func create(containerID, bundlePath, console, pidFilePath string) error {
-	// container ID MUST be provided
+	// container ID MUST be provided.
 	if containerID == "" {
 		return fmt.Errorf("Missing container ID")
 	}
 
-	// container ID MUST be unique
+	// container ID MUST be unique.
 	if uniqueContainerID(containerID) == false {
 		return fmt.Errorf("ID already in use, unique ID should be provided")
 	}
 
-	// bundle path MUST be provided
+	// bundle path MUST be provided.
 	if bundlePath == "" {
 		return fmt.Errorf("Missing bundle path")
 	}
 
-	// bundle path MUST be valid
+	// bundle path MUST be valid.
 	fileInfo, err := os.Stat(bundlePath)
 	if err != nil {
 		return fmt.Errorf("Invalid bundle path: %s", err)
@@ -103,7 +94,7 @@ func create(containerID, bundlePath, console, pidFilePath string) error {
 		return fmt.Errorf("Invalid bundle path, it should be a directory")
 	}
 
-	runtimeConfig, err := createRuntimeConfig()
+	runtimeConfig, err := loadConfiguration("")
 	if err != nil {
 		return err
 	}
@@ -136,19 +127,6 @@ func create(containerID, bundlePath, console, pidFilePath string) error {
 
 func uniqueContainerID(containerID string) bool {
 	return true
-}
-
-func createRuntimeConfig() (oci.RuntimeConfig, error) {
-	runtimeConfig := oci.RuntimeConfig{
-		VMConfig:         vc.Resources{},
-		HypervisorType:   defaultHypervisorType,
-		HypervisorConfig: defaultHypervisorConfig,
-		AgentType:        defaultAgentType,
-		AgentConfig:      defaultAgentConfig,
-		ProxyType:        defaultProxyType,
-	}
-
-	return runtimeConfig, nil
 }
 
 func startShim() (int, error) {
