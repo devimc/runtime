@@ -16,6 +16,11 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
+	vc "github.com/containers/virtcontainers"
+	"github.com/containers/virtcontainers/pkg/oci"
 	"github.com/urfave/cli"
 )
 
@@ -52,7 +57,137 @@ var createCommand = cli.Command{
 		},
 	},
 	Action: func(context *cli.Context) error {
-		// TODO
-		return nil
+		return create(context.String("container-id"),
+			context.String("bundle"),
+			context.String("console"),
+			context.String("pid-file"))
 	},
+}
+
+var defaultHypervisorType = vc.QemuHypervisor
+var defaultAgentType = vc.HyperstartAgent
+var defaultProxyType = vc.CCProxyType
+var defaultHypervisorConfig = vc.HypervisorConfig{
+	KernelPath:     "/usr/share/clear-containers/vmlinux.container",
+	ImagePath:      "/usr/share/clear-containers/clear-containers.img",
+	HypervisorPath: "/usr/bin/qemu-lite-system-x86_64",
+}
+var defaultAgentConfig = vc.HyperConfig{
+	PauseBinPath: "/tmp/bundles/pause_bundle/rootfs/bin/pause",
+}
+
+var defaultShimPath = "/usr/bin/shim"
+
+func create(containerID, bundlePath, console, pidFilePath string) error {
+	// container ID MUST be provided
+	if containerID == "" {
+		return fmt.Errorf("Missing container ID")
+	}
+
+	// container ID MUST be unique
+	if uniqueContainerID(containerID) == false {
+		return fmt.Errorf("ID already in use, unique ID should be provided")
+	}
+
+	// bundle path MUST be provided
+	if bundlePath == "" {
+		return fmt.Errorf("Missing bundle path")
+	}
+
+	// bundle path MUST be valid
+	fileInfo, err := os.Stat(bundlePath)
+	if err != nil {
+		return fmt.Errorf("Invalid bundle path: %s", err)
+	}
+	if fileInfo.IsDir() == false {
+		return fmt.Errorf("Invalid bundle path, it should be a directory")
+	}
+
+	runtimeConfig, err := createRuntimeConfig()
+	if err != nil {
+		return err
+	}
+
+	podConfig, err := oci.PodConfig(runtimeConfig, bundlePath, containerID, console)
+	if err != nil {
+		return err
+	}
+
+	_, err = vc.CreatePod(*podConfig)
+	if err != nil {
+		return err
+	}
+
+	// Start the shim to retrieve its PID.
+	pid, err := startShim()
+	if err != nil {
+		return err
+	}
+
+	// Creation of PID file has to be the last thing done in the create
+	// because containerd considers the create complete after this file
+	// is created.
+	if err := createPIDFile(pidFilePath, pid); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func uniqueContainerID(containerID string) bool {
+	return true
+}
+
+func createRuntimeConfig() (oci.RuntimeConfig, error) {
+	runtimeConfig := oci.RuntimeConfig{
+		VMConfig:         vc.Resources{},
+		HypervisorType:   defaultHypervisorType,
+		HypervisorConfig: defaultHypervisorConfig,
+		AgentType:        defaultAgentType,
+		AgentConfig:      defaultAgentConfig,
+		ProxyType:        defaultProxyType,
+	}
+
+	return runtimeConfig, nil
+}
+
+func startShim() (int, error) {
+	attr := os.ProcAttr{
+		Env: os.Environ(),
+	}
+
+	process, err := os.StartProcess(defaultShimPath, []string{}, &attr)
+	if err != nil {
+		return -1, err
+	}
+
+	return process.Pid, nil
+}
+
+func createPIDFile(pidFilePath string, pid int) error {
+	if pidFilePath == "" {
+		return fmt.Errorf("Missing PID file path")
+	}
+
+	if err := os.RemoveAll(pidFilePath); err != nil {
+		return err
+	}
+
+	f, err := os.Create(pidFilePath)
+	if err != nil {
+		return err
+	}
+
+	pidStr := fmt.Sprintf("%d", pid)
+
+	n, err := f.WriteString(pidStr)
+	if err != nil {
+		return err
+	}
+
+	if n < len(pidStr) {
+		return fmt.Errorf("Could write pid to pid file: only %d bytes written out of %d", n, len(pidStr))
+	}
+
+	return nil
 }
