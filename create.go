@@ -23,10 +23,9 @@ import (
 
 	vc "github.com/containers/virtcontainers"
 	"github.com/containers/virtcontainers/pkg/oci"
-	"github.com/urfave/cli"
-)
+	"github.com/urfave/cli
 
-var createCLICommand = cli.Command{
+var createCLICommand = cli.Command
 	Name:  "create",
 	Usage: "Create a container",
 	ArgsUsage: `<container-id>
